@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JK Traders | Master Admin</title>
+    <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-database-compat.js"></script>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --green: #22c55e; --blue: #3b82f6; --red: #ef4444; --text: #f8fafc; }
+        body { margin: 0; font-family: sans-serif; background: var(--bg); color: var(--text); padding: 15px; }
+        #securityOverlay, #loginOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .login-card { background: #1e293b; padding: 30px; border-radius: 15px; width: 90%; max-width: 350px; text-align: center; }
+        input, textarea { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
+        .btn { width: 100%; padding: 15px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; color: white; background: var(--green); }
+        #adminContent { display: none; }
+        .tabs { display: flex; gap: 5px; margin-bottom: 15px; overflow-x: auto; }
+        .tab-btn { background: #334155; border: none; color: white; padding: 10px 15px; cursor: pointer; border-radius: 8px; white-space: nowrap; }
+        .tab-btn.active { background: var(--green); }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; margin-bottom: 15px; display: none; }
+        .card.active { display: block; }
+        .item-row { background: #0f172a; padding: 12px; border-radius: 8px; margin-top: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--green); }
+    </style>
+</head>
+<body onload="checkDomain()">
+
+    <div id="securityOverlay" style="display: none;">
+        <div class="login-card">
+            <h2 style="color: var(--red);">Restricted Domain</h2>
+            <input type="password" id="bypassKey" placeholder="Bypass Password">
+            <button class="btn" style="background: var(--red);" onclick="verifyBypass()">BYPASS</button>
+        </div>
+    </div>
+
+    <div id="loginOverlay" style="display: none;">
+        <div class="login-card" id="step1">
+            <h2 style="color: var(--green);">Admin Login</h2>
+            <input type="text" id="user" placeholder="Username">
+            <input type="password" id="pass1" placeholder="Password">
+            <button class="btn" onclick="checkStep1()">NEXT</button>
+        </div>
+        <div class="login-card" id="step2" style="display: none;">
+            <h2 style="color: #3498db;">Identity Check</h2>
+            <input type="password" id="pass2" placeholder="Second Password">
+            <button class="btn" style="background: #3498db;" onclick="checkStep2()">UNLOCK</button>
+        </div>
+    </div>
+
+    <div id="adminContent">
+        <h2 style="text-align:center;">JK Master Admin</h2>
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showTab('showroom', this)">Showroom</button>
+            <button class="tab-btn" onclick="showTab('dispatch', this)">Dispatch Job</button>
+            <button class="tab-btn" onclick="showTab('ongoing', this)">Ongoing Jobs</button>
+            <button class="tab-btn" onclick="showTab('workers', this)">Manage Workers</button>
+        </div>
+
+        <div id="showroom" class="card active">
+            <input type="text" id="pName" placeholder="Product Name">
+            <input type="text" id="pPrice" placeholder="Price">
+            <input type="text" id="pImg" placeholder="Image URL">
+            <button class="btn" onclick="addProduce()">🚀 Post Item</button>
+            <div id="live-showroom"></div>
+        </div>
+
+        <div id="dispatch" class="card">
+            <h3>Dispatch Job</h3>
+            <textarea id="jobMsg" style="height:100px;" placeholder="Describe job / paste WhatsApp order..."></textarea>
+            <button class="btn" style="background: var(--blue);" onclick="dispatchJob()">📢 Send to Workers</button>
+        </div>
+
+        <div id="ongoing" class="card">
+            <h3>Active Worker Jobs</h3>
+            <p style="font-size:12px; color:#94a3b8;">Click 'Satisfied' to free the worker for new clients.</p>
+            <div id="active-jobs-list"></div>
+        </div>
+
+        <div id="workers" class="card">
+            <h3>Approvals & Removal</h3>
+            <div id="worker-list"></div>
+        </div>
+    </div>
+
+    <script>
+        function checkDomain() {
+            if (window.location.hostname === "katabazi.netlify.app" || window.location.hostname === "localhost") {
+                document.getElementById('loginOverlay').style.display = 'flex';
+            } else { document.getElementById('securityOverlay').style.display = 'flex'; }
+        }
+
+        function verifyBypass() {
+            if (document.getElementById('bypassKey').value === "Goot@5151.") {
+                document.getElementById('securityOverlay').style.display = 'none';
+                document.getElementById('loginOverlay').style.display = 'flex';
+            } else { alert("Wrong Key"); }
+        }
+
+        function checkStep1() {
+            if(document.getElementById('user').value === "katabazijane" && document.getElementById('pass1').value === "goot5151") {
+                document.getElementById('step1').style.display = 'none';
+                document.getElementById('step2').style.display = 'block';
+            } else { alert("Denied"); }
+        }
+
+        function checkStep2() {
+            if(document.getElementById('pass2').value === "Goot@5151.") {
+                document.getElementById('loginOverlay').style.display = 'none';
+                document.getElementById('adminContent').style.display = 'block';
+                initFirebase();
+            } else { alert("Denied"); }
+        }
+
+        let db;
+        function initFirebase() {
+            const config = {
+                apiKey: "AIzaSyB9y4xcSykAbaIlC13MOo9T0laNuqWh6OY",
+                authDomain: "katabazi-jane1.firebaseapp.com",
+                projectId: "katabazi-jane1",
+                databaseURL: "https://katabazi-jane1-default-rtdb.firebaseio.com/",
+                storageBucket: "katabazi-jane1.firebasestorage.app",
+                messagingSenderId: "478612600510",
+                appId: "1:478612600510:web:242db5bea99613010c90ef"
+            };
+            firebase.initializeApp(config);
+            db = firebase.database();
+
+            // Load Showroom
+            db.ref('showroom').on('value', s => {
+                const div = document.getElementById('live-showroom');
+                div.innerHTML = "";
+                if(s.val()) Object.entries(s.val()).forEach(([id, p]) => {
+                    div.innerHTML += `<div class="item-row"><span>${p.name}</span><button onclick="db.ref('showroom/${id}').remove()" style="background:red; color:white; border:none; padding:5px; border-radius:4px;">Del</button></div>`;
+                });
+            });
+
+            // Load Ongoing Jobs
+            db.ref('orders').on('value', s => {
+                const div = document.getElementById('active-jobs-list');
+                div.innerHTML = "";
+                if(s.val()) Object.entries(s.val()).forEach(([id, o]) => {
+                    if(o.status === 'taken') {
+                        div.innerHTML += `<div class="item-row" style="border-left-color: var(--blue);">
+                            <span><b>${o.staff}</b>: ${o.text.substring(0,25)}...</span>
+                            <button onclick="db.ref('orders/${id}').remove()" style="background:var(--green); color:white; border:none; padding:8px; border-radius:5px;">Satisfied (Free Worker)</button>
+                        </div>`;
+                    }
+                });
+            });
+
+            // Load Workers (Approval + Removal)
+            db.ref('workers').on('value', s => {
+                const div = document.getElementById('worker-list');
+                div.innerHTML = "";
+                if(s.val()) Object.entries(s.val()).forEach(([id, w]) => {
+                    div.innerHTML += `<div class="item-row">
+                        <span>${w.name} (${w.status})</span>
+                        <div style="display:flex; gap:5px;">
+                            ${w.status === 'pending' ? `<button onclick="db.ref('workers/${id}').update({status:'active'})" style="background:var(--green); border:none; color:white; padding:5px; border-radius:4px;">Approve</button>` : ''}
+                            <button onclick="if(confirm('Remove worker?')) db.ref('workers/${id}').remove()" style="background:var(--red); border:none; color:white; padding:5px; border-radius:4px;">Remove</button>
+                        </div>
+                    </div>`;
+                });
+            });
+        }
+
+        function showTab(id, btn) {
+            document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        function addProduce() {
+            const name = document.getElementById('pName').value;
+            const price = document.getElementById('pPrice').value;
+            const img = document.getElementById('pImg').value;
+            if(!name || !price) return;
+            db.ref('showroom').push({ name, price, image: img, time: Date.now() });
+        }
+
+        function dispatchJob() {
+            const msg = document.getElementById('jobMsg').value;
+            if(!msg) return;
+            db.ref('orders').push({ text: msg, status: 'pending', time: Date.now() });
+            document.getElementById('jobMsg').value = "";
+            alert("Sent!");
+        }
+    </script>
+</body>
+</html>
